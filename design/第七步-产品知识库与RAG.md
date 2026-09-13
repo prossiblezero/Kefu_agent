@@ -29,12 +29,14 @@
 
 **核对来源与范围 → 整理章节 → 生成片段和向量 → 检查 → 发布。** 首版无需导入平台、定时全网抓取或复杂任务编排。
 
-- 清晰的 Markdown／文本直接按标题处理；PDF 或扫描手册需要时使用 Docling 解析，保留页码、图片及表格关系。关键型号、故障码、数值和警告人工核对，失败保留原件并标记缺失。
-- 短章节直接作为检索单元，只有超长章节才切成带父章节 ID 的片段。表格保留表头、单位、注释；前置条件和安全警告不能在切分时丢掉。
+- 网页用 HTTP 客户端＋Beautiful Soup 提取正文与明确关联附件，去掉推荐列表；PDF、HTML、Markdown 复用 Docling 转为结构化文档，扫描资料按需启用 OCR。保留页码、图片及表格关系，关键型号、故障码、数值和警告人工核对，失败保留原件并标记缺失。
+- 分块优先复用 Docling `HybridChunker` 的结构切分与 Token 长度控制；我们只补适用范围约束、父章节引用和必要条件校验。短章节尽量保持完整，超长部分拆成关联父章节的片段；不跨产品／适用范围合并，表格保留表头、单位与注释。分块器本身不保证警告或操作条件完整，需要检查及按需展开。
 - 用原文加已核对的标题、型号构造 embedding 输入。保留原始片段作为引用，不让模型补造技术事实；暂不批量生成假想问答。
 - 正文、向量和版本状态放在同一个 PostgreSQL。模型调用在事务外完成，新版本准备好后通过短事务发布；失败时旧版继续可用。旧版本按适用时间保留或撤回，无需首版处理跨数据库同步。
 
 公开资料中的操作步骤也要经过项目审核；自动抽取只产生候选，未审核步骤不能用于实际操作卡。
+
+这是上一轮 SDK 讨论的选型建议，尚未用样本文档验证。[Docling 切块说明](https://docling-project.github.io/docling/concepts/chunking/)中的 Hybrid 指文档结构与 Token 长度结合；不新增模型做语义切分。解析依赖留在离线导入环境，调用与 embedding 预算衔接[第九步](第九步-模型接入与调用管理.md)。
 
 ## 4. 检索与主循环如何衔接
 
@@ -59,6 +61,16 @@ flowchart LR
 **返回证据。** 沿用工具契约，包含片段／步骤 ID、版本、来源页码、适用条件与未核实项，区分无结果和接口故障。主循环判断是否足以继续；冲突无法核清时澄清或升级。距离分数不当正确率，有引用也不能保证自由文本回答正确。
 
 图片仍通过 `inspect_image` 实际读取。用户故障图用于提取可见线索，手册图用授权材料 ID 按需查看；保留原图，暂不建立独立视觉向量索引。补查继续计入现有运行预算，不新增检索 Agent 或反思循环。
+
+### 按证据缺口触发多跳
+
+首版支持多跳，但不要求每个问题多查几轮。例如，某条诊断资料要求先核对固件适用范围，Agent 才根据该线索查版本说明，再决定是否展示操作卡。这是说明机制的假设案例，不是已核实的产品故障知识。订单查询接质保核验属于业务工具协作，父章节展开属于补全上下文，不都算知识多跳。
+
+- **触发：** 当前证据留下一个影响决策、且能通过资料补齐的具体缺项；缺的是用户设备信息则追问，不靠反复搜索猜测。
+- **衔接：** 在已有任务工作状态记录缺项、上一跳证据 ID 和待核实条件；下一次 `search_knowledge` 保留完整型号、版本及关键实体，服务端继续执行原来的范围约束。已有章节引用优先按授权引用读取，不重复猜关键词。
+- **停止：** 证据足够就继续服务；没有新增有效证据、重复相同缺项或达到第二步预算时，转为针对性澄清／升级并保留进度。不得放宽产品范围凑答案，也不能把候选原因写成确诊。
+
+不新增知识图谱、检索 Agent 或一套独立循环。评测同时看多跳样本的完整证据链命中率与单跳样本的不必要检索次数。
 
 ## 5. ponytail 检查：保留什么，什么时候再加
 
@@ -89,8 +101,9 @@ flowchart LR
 |---|---|
 | [Docling](https://github.com/docling-project/docling-core/blob/main/docling_core/transforms/chunker/hybrid_chunker.py)／[RAGFlow](https://github.com/infiniflow/ragflow/blob/main/rag/nlp/search.py) | 保留结构、来源与父章节关系；不照搬完整导入平台 |
 | [Sufficient Context，ICLR 2025](https://research.google/pubs/sufficient-context-a-new-lens-on-retrieval-augmented-generation-systems/) | 相关材料不一定足以作答；由现有循环核对缺项，不增加独立评分 Agent |
+| [IRCoT，ACL 2023](https://aclanthology.org/2023.acl-long.557/)／[ChainRAG，ACL 2025](https://aclanthology.org/2025.acl-long.1089/) | 借鉴按新证据继续检索、补全后续查询中的关键实体；不采用 ChainRAG 的句子图。IRCoT 是基础参考，不称为近两年论文 |
 | [RAGChecker，NeurIPS 2024 Datasets and Benchmarks 轨道](https://proceedings.neurips.cc/paper_files/paper/2024/hash/27245589131d17368cccdfa990cbf16e-Abstract-Datasets_and_Benchmarks_Track.html) | 拆分检索与生成错误，检查具体断言的证据支持 |
 | [RankRAG，NeurIPS 2024 主会](https://proceedings.nips.cc/paper_files/paper/2024/hash/db93ccb6cf392f352570dd5af0a223d3-Abstract-Conference.html)／[Haystack](https://github.com/deepset-ai/haystack/blob/main/haystack/components/joiners/document_joiner.py) | 保留为重排与融合的后续参考，首版暂不采用对应机制 |
 
-来源核对日期为 2026-09-12。借鉴是设计判断，尚未复现论文或验证本项目收益；本轮明确收敛存储和检索链路，后续继续讨论 embedding 与数据准备。
+基础来源核对于 2026-09-12，多跳补充于 2026-09-13。借鉴是设计判断，尚未复现论文或验证本项目收益；数据与验收衔接[第八步](第八步-数据准备与评测闭环.md)，embedding 选型由开发集效果与运行资源共同决定。
 
