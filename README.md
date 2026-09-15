@@ -36,7 +36,7 @@ Kefu_agent/
 
 [历史架构讨论](design/archive/架构讨论历史稿.md)仅供追溯，冲突时以当前分步设计为准。
 
-原欧莱雅材料保存在本地工作区的 `archive/loreal/`；Commerce 学习指南和上游源码分别保存在工作区的 `reference/Commerce-Agents中文学习指南.md`、`reference/commerce-agents/`。这些资料均位于本 Git 仓库之外；新环境可直接访问 [Commerce Agents 上游仓库](https://github.com/anthropics/commerce-agents)。
+原欧莱雅材料位于相邻的 `../LOreal_agent/`；Commerce 学习指南和上游源码分别位于 `../learn-commerce-agents/Commerce-Agents中文学习指南.md`、`../learn-commerce-agents/commerce-agents/`。这些资料均位于本 Git 仓库之外；新环境可直接访问 [Commerce Agents 上游仓库](https://github.com/anthropics/commerce-agents)。
 
 ## 远程仓库
 
